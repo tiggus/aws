@@ -63,11 +63,11 @@ jobs:
       - name: terraform plan
         run: |
           terraform plan | tee /tmp/$TF_ENV.tfplan
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: 
           name: terraform
           path: ./plan.tfplan
-          retention-days: 9
+          retention-days: 3
       - name: generate terraform summary
         id: generate_summary
         shell: bash
