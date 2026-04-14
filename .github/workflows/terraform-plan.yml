@@ -1,0 +1,112 @@
+name: terraform-plan
+on:
+  push:
+  workflow_dispatch:
+    inputs: 
+      tag_version: 
+        description: 'tag version; if not set default will be used'
+        required: false
+
+env:
+  AWS_REGION : "us-east-1"
+  TF_ENV: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  inputs:
+    runs-on: ubuntu-latest
+    steps:
+    - name: publish_summary 
+      if: always()
+      shell: bash
+      run: | 
+        echo "## 🐵 workflow inputs :: $TF_ENV" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| input | value |" >> $GITHUB_STEP_SUMMARY
+        echo "| :--------- | :--------- |" >> $GITHUB_STEP_SUMMARY
+        if [ -n "${{ inputs.tag_version }}" ]; then
+          echo "| tag version | ${{ inputs.tag_version }} |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  version:
+    runs-on: ubuntu-latest
+    needs: [inputs]
+    outputs:
+      version: ${{ steps.git_version.outputs.version }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: determine version
+        id: git_version
+        run: |
+          . ${GITHUB_WORKSPACE}/.github/scripts/version.sh
+
+  terraform-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT}}:role/github-oidc
+          aws-region: ${{ env.AWS_REGION }}
+      - name: terraform setup
+        run: |
+          terraform init
+          terraform workspace select -or-create $TF_ENV
+      - name: terraform plan
+        run: |
+          terraform plan | tee /tmp/$TF_ENV.tfplan
+      - uses: actions/upload-artifact@v4
+        with: 
+          name: terraform
+          path: ./plan.tfplan
+          retention-days: 9
+      - name: generate terraform summary
+        id: generate_summary
+        shell: bash
+        run: |
+          source .github/scripts/terraform.sh $TF_ENV
+  
+  # infracost:
+  #   name: infracost
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v5
+  #     - name: setup
+  #       uses: infracost/actions/setup@v3
+  #       with:
+  #         api-key: ${{ secrets.INFRACOST_API_KEY }}
+  #     - name: cost estimate baseline
+  #       run: |
+  #         infracost breakdown --path=. --show-skipped
+
+  
+
+ 
+# jobs:
+#   build-ubuntu:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: version
+#         run: |
+#           uname -m
+#           docker version
+#   build-mac:
+#     runs-on: macos-latest
+
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: version
+#         run: |
+#           uname -m
+#           docker version
+
