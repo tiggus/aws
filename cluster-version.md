@@ -29,16 +29,21 @@ get_cluster_info() {
         addons=($(aws eks list-addons --cluster-name "$cluster" --region "$1" --output json 2>/dev/null | jq -r '.addons[]'))
         for addon in $addons; do
             addon_info=$(aws eks describe-addon --cluster-name "$cluster" --addon-name "$addon" --region "$1" --output json 2>/dev/null | jq -r '. | "\(.addon.addonVersion):\(.addon.status)"')
-            write_output "$addon" "$(echo $addon_info | cut -d ":" -f 1) $(echo $addon_info | cut -d ":" -f 2)"
-            latest_version=$(aws eks describe-addon-versions --addon-name "$addon" --kubernetes-version "$k8s_version" --region "$1" --output json 2>/dev/null | jq -r '.addons[0].addonVersions | map(select(.compatibilities[]?.defaultVersion == true)) | if length > 0 then .[0].addonVersion else null end')
+            current=$(echo $addon_info | cut -d ":" -f 1)
+            searcher=0
+            searcher=$(grep "$current" eks.yaml | wc -l)
+            write_output "$addon" "$current $(echo $addon_info | cut -d ":" -f 2) $searcher"
+            latest=$(aws eks describe-addon-versions --addon-name "$addon" --kubernetes-version "$k8s_version" --region "$1" --output json 2>/dev/null | jq -r '.addons[0].addonVersions | map(select(.compatibilities[]?.defaultVersion == true)) | if length > 0 then .[0].addonVersion else null end')
             cmp_result=0
-            compare $(echo $addon_info | cut -d ":" -f 1) "$latest_version" || cmp_result=$?
+            compare "$current" "$latest" || cmp_result=$?
             if [[ "$cmp_result" -eq 1 ]]; then
-               status_str="${YELLOW}update${RESET} $latest_version"
+                write_output "update$" $latest
+                write_output "updating" $addon\\n
+                esc1=$(printf '%s' "$current" | sed 's/[.]/\\./g')
+                sed -i '' -e "s/"$esc1"/"$latest"/g" eks.yaml
             else
-                status_str="${GREEN}latest${RESET}"
+                echo "${GREEN}latest${RESET}"
            fi
-            echo $status_str\\n
         done
         echo ""
     done
